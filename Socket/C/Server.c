@@ -89,7 +89,7 @@ int main() {
             exit(0);
         } else if (pid > 0) {
             // Parent process: close the client socket
-            printf('Parent process closing client socket at %d\n', client_sock);
+            printf("Parent process closing client socket at %d\n", client_sock);
             close(client_sock);
             wait(NULL); // Optionally wait for child processes to prevent zombies
         } else {
