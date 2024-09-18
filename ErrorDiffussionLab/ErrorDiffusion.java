@@ -119,7 +119,7 @@ public class ErrorDiffusion {
         try {
             String inputPath = "ErrorDiffussionLab/miraidon.png";
             String outputPath = "ErrorDiffussionLab/miraidon_output.png";
-            int numThreads = 2; // Configurable number of threads
+            int numThreads = 4; // Configurable number of threads
             int[][] inputImage = loadImage(inputPath);
 
             // Save grayscale image
