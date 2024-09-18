@@ -1,4 +1,3 @@
-
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
@@ -14,16 +13,20 @@ public class ErrorDiffusion {
     private final int height;
     private final int[][] outputImage;
     private final int numThreads;
-    private final CountDownLatch[] readyToProcess;
+    private final CountDownLatch[][] readyToProcess;
 
     public ErrorDiffusion(int width, int height, int numThreads) {
         this.width = width;
         this.height = height;
         this.outputImage = new int[height][width];
         this.numThreads = numThreads; // Number of threads is now configurable
-        this.readyToProcess = new CountDownLatch[height];
+        this.readyToProcess = new CountDownLatch[height][width];
+
+        // Initialize latches for each pixel
         for (int i = 0; i < height; i++) {
-            readyToProcess[i] = new CountDownLatch(1);
+            for (int j = 0; j < width; j++) {
+                readyToProcess[i][j] = new CountDownLatch(1);
+            }
         }
     }
 
@@ -67,27 +70,33 @@ public class ErrorDiffusion {
             executor.submit(() -> {
                 long rowStartTime = System.nanoTime();
                 try {
-                    // Wait for the previous row to be processed (except for the first row)
-                    if (row > 0) {
-                        readyToProcess[row - 1].await();
-                    }
-
                     for (int j = 0; j < width; j++) {
-                        int oldPixel = inputImage[row][j];
-                        int newPixel = oldPixel < 128 ? 0 : 255;
-                        outputImage[row][j] = newPixel;
-                        int err = oldPixel - newPixel;
-                        if (j + 1 < width) inputImage[row][j + 1] += err * 7 / 16;
-                        if (row + 1 < height) {
-                            if (j > 0) inputImage[row + 1][j - 1] += err * 3 / 16;
-                            inputImage[row + 1][j] += err * 5 / 16;
-                            if (j + 1 < width) inputImage[row + 1][j + 1] += err * 1 / 16;
-                        }
-                    }
+                        final int col = j;
 
-                    // Signal that this row has been processed
-                    readyToProcess[row].countDown();
-                } catch (InterruptedException e) {
+                        // Wait for the previous row to process the necessary pixels
+                        if (row > 0) {
+                            if (col > 0) readyToProcess[row - 1][col - 1].await();
+                            readyToProcess[row - 1][col].await();
+                            if (col + 1 < width) readyToProcess[row - 1][col + 1].await();
+                        }
+
+                        int oldPixel = inputImage[row][col];
+                        int newPixel = oldPixel < 128 ? 0 : 255;
+                        outputImage[row][col] = newPixel;
+                        int err = oldPixel - newPixel;
+
+                        // Diffusion logic with error spreading
+                        if (col + 1 < width) inputImage[row][col + 1] += err * 7 / 16;
+                        if (row + 1 < height) {
+                            if (col > 0) inputImage[row + 1][col - 1] += err * 3 / 16;
+                            inputImage[row + 1][col] += err * 5 / 16;
+                            if (col + 1 < width) inputImage[row + 1][col + 1] += err * 1 / 16;
+                        }
+
+                        // Signal that this pixel is processed
+                        readyToProcess[row][col].countDown();
+                    }
+                } catch (Exception e) {
                     Thread.currentThread().interrupt();
                 }
                 long rowEndTime = System.nanoTime();
@@ -106,25 +115,23 @@ public class ErrorDiffusion {
         System.out.println("Total processing time: " + (endTime - startTime) + " ms");
     }
 
-
     public static void main(String[] args) {
         try {
-            String inputPath = "CS_OS/OS_worksheet/ErrorDiffussionLab/miraidon.png";
-            String outputPath = "CS_OS/OS_worksheet/ErrorDiffussionLab/miraidon_output.png";
-            //System.err.println(Runtime.getRuntime().availableProcessors());
-            int numThreads =  4;//Runtime.getRuntime().availableProcessors(); // Use available processors
+            String inputPath = "ErrorDiffussionLab/miraidon.png";
+            String outputPath = "ErrorDiffussionLab/miraidon_output.png";
+            int numThreads = 2; // Configurable number of threads
             int[][] inputImage = loadImage(inputPath);
 
-
-            //save grayscale image
+            // Save grayscale image
             BufferedImage img = new BufferedImage(inputImage[0].length, inputImage.length, BufferedImage.TYPE_BYTE_GRAY);
             for (int i = 0; i < inputImage.length; i++) {
                 for (int j = 0; j < inputImage[0].length; j++) {
                     img.setRGB(j, i, (inputImage[i][j] << 16) | (inputImage[i][j] << 8) | inputImage[i][j]);
                 }
             }
-            ImageIO.write(img, "png", new File("miraidon_grayscale.png"));
+            ImageIO.write(img, "png", new File("ErrorDiffussionLab/miraidon_grayscale.png"));
 
+            // Process image using error diffusion
             ErrorDiffusion processor = new ErrorDiffusion(inputImage[0].length, inputImage.length, numThreads);
             processor.processImage(inputImage);
             processor.saveImage(outputPath);
